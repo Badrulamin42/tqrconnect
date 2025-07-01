@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "366346554348",
+    "project_id": "tqrconnectv2",
+    "storage_bucket": "tqrconnectv2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:366346554348:android:4f6c8f99856c7611cbcec9",
+        "android_client_info": {
+          "package_name": "com.transpire.tqrconnectv1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBjktxNfnd32u6OMM-oILfF8J-b8pv1DF4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
