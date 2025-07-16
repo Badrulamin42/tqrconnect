@@ -6,17 +6,17 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 class InjectResult {
   final bool result;
-  final int? utd1;
+  final int? utd;
   final int id;
 
   InjectResult({
     required this.result,
-    required this.utd1,
+    required this.utd,
     required this.id,
   });
 }
 
-int? _extractUtd1FromPolling(List<dynamic>? responseList) {
+int? _extractutdFromPolling(List<dynamic>? responseList) {
   try {
     if (responseList == null || responseList.isEmpty) return null;
 
@@ -28,9 +28,9 @@ int? _extractUtd1FromPolling(List<dynamic>? responseList) {
 
     if (pollingData == null || pollingData["data"] == null) return null;
 
-    return int.tryParse(pollingData["data"]["utd1"].toString());
+    return int.tryParse(pollingData["data"]["utd"].toString());
   } catch (e) {
-    print("❌ Error parsing utd1: $e");
+    print("❌ Error parsing utd: $e");
     return null;
   }
 }
@@ -49,6 +49,12 @@ class BluetoothUtils {
     required BluetoothDevice device,
     required int id,
     required String password,
+    required String macaddress,
+    required String mode,
+    required String pulseinterval,
+    required String pulsespace,
+    required BluetoothCharacteristic notifyChar,
+    required BluetoothCharacteristic writeChar,
   }) async {
     if (id < 1 || id > 16) throw ArgumentError('ID must be between 1 and 16');
 
@@ -59,7 +65,12 @@ class BluetoothUtils {
       "commandcode": "polling",
       "data": {
         "unixtime": unixTime,
-        "id": id.toString(),
+        "address": id.toString(),
+        "macaddress":macaddress,
+        "mode": mode,
+        "pulseinterval": pulseinterval,
+        "pulsespace": pulsespace,
+        "inject": "0"
       },
     };
 
@@ -69,16 +80,21 @@ class BluetoothUtils {
       final response = await BluetoothUtils.sendCommandAndListenProperly(
         device: device,
         fullJson: fullJson,
+        notifyChar: notifyChar,
+        writeChar: writeChar,
       );
 
       final parsed = jsonDecode(response);
       if (parsed is List && parsed.isNotEmpty) {
         final data = parsed[0]['data'];
+
+        print('test1 : ${data}');
         if (data is Map && data['status'] == 'present') {
           return {
-            "id": int.parse(data['id']),
-            "utd1": data['utd1'],
-            "utd2": data['utd2'],
+            "id": int.parse(data['address']),
+            "utd": data['utd'],
+            "macaddress":data['macaddress']
+
           };
         }
       }
@@ -95,109 +111,106 @@ class BluetoothUtils {
     required int channel,
     required int counter,
     required String password,
+    required String utd,
+    required String macaddress,
+    required String mode,
+    required String pulseinterval,
+    required String pulsespace,
+    required BluetoothCharacteristic notifyChar,
+    required BluetoothCharacteristic writeChar,
   }) async {
-    try {
-      await Future.delayed(const Duration(milliseconds: 500));
-      // Step 1: Initial polling to get utd1
-      final initialPollingResponse = await sendPollingCommand(
-        device: device,
-        id: id,
-        password: password,
-      );
-      final initialUtd1 = int.tryParse(initialPollingResponse?["utd1"] ?? "");
-      await Future.delayed(const Duration(milliseconds: 250));
-      if (initialUtd1 == null) {
-        print("❌ Initial polling failed or utd1 not found.");
-        return InjectResult(result: false, utd1: null, id: id);
-      }
+    for (int i = 0; i < 3; i++) {
+      try {
+        await Future.delayed(const Duration(milliseconds: 500));
+        // Step 1: Initial polling to get utd
 
-      // Step 2: Inject command
-      final unixTime = (DateTime
-          .now()
-          .millisecondsSinceEpoch ~/ 1000).toString();
-      final dataPayload = {
-        "commandcode": "inject",
-        "data": {
-          "unixtime": unixTime,
-          "id": id.toString(),
-          "channel": channel.toString(),
-          "counter": counter.toString(),
-        },
-      };
-      final fullJson = await _wrapWithSignature(
-          device, password, [dataPayload]);
+        final initialutd = int.tryParse(utd ?? "");
 
-      final injectResponse = await BluetoothUtils.sendCommandAndListenProperly(
-        device: device,
-        fullJson: fullJson,
-      );
-      await Future.delayed(const Duration(milliseconds: 350));
-      print("📥 Inject Response: $injectResponse");
-
-      // Step 3: After polling
-      final afterPollingResponse = await sendPollingCommand(
-        device: device,
-        id: id,
-        password: password,
-      );
-      int? afterUtd1 = int.tryParse(afterPollingResponse?["utd1"] ?? "");
-
-      if (afterUtd1 == null) {
-        print("❌ After polling failed or utd1 not found.");
-        return InjectResult(result: false, utd1: null, id: id);
-      }
-
-      // Step 4: Compare utd1
-      bool isSuccess = false;
-
-
-      for (int attempt = 1; attempt <= 3; attempt++) {
-        final afterPollingResponse = await BluetoothUtils.sendPollingCommand(
-          device: device,
-          id: id,
-          password: password,
-        );
-
-        afterUtd1 = int.tryParse(afterPollingResponse?["utd1"] ?? "");
-
-        if (afterUtd1 != null && afterUtd1 > initialUtd1) {
-          isSuccess = true;
-          break; // ✅ Success
+        if (initialutd == null) {
+          print("❌ Initial polling failed or utd not found.");
+          return InjectResult(result: false, utd: null, id: id);
         }
 
-        print("⚠️ Attempt $attempt: UTD1 not updated. Retrying...");
-        await Future.delayed(const Duration(milliseconds: 250));
-      }
+        // Step 2: Inject command
+        final unixTime = (DateTime
+            .now()
+            .millisecondsSinceEpoch ~/ 1000).toString();
+        final dataPayload = {
+          "commandcode": "polling",
+          "data": {
+            "address": id.toString(),
+            "macaddress":macaddress,
+            "unixtime": unixTime,
+            "mode": mode,
+            "pulseinterval": pulseinterval,
+            "pulsespace": pulsespace,
+            "inject": counter.toString()
 
-      if (!isSuccess) {
-        print("❌ Inject failed: UTD1 did not increase after retries.");
-        return InjectResult(result: false, utd1: afterUtd1, id: id);
-      }
+          },
+        };
+        final fullJson = await _wrapWithSignature(
+            device, password, [dataPayload]);
+
+        final injectResponseString = await BluetoothUtils.sendCommandAndListenProperly(
+          device: device,
+          fullJson: fullJson,
+          notifyChar: notifyChar,
+          writeChar: writeChar,
+        );
+
+        await Future.delayed(const Duration(milliseconds: 1000));
+        print("📥 Inject Response: $injectResponseString");
+
+        final injectResponse = jsonDecode(injectResponseString);
+
+        final data = injectResponse[0]['data'];
+        print("❌ ${data}");
+        int? afterutd = int.tryParse(data["utd"]?.toString() ?? '');
+
+
+        if (afterutd == null) {
+          print("❌ After polling failed or utd not found.");
+          return InjectResult(result: false, utd: null, id: id);
+        }
+
+        // Step 4: Compare utd
+        bool isSuccess = false;
+
+        if (afterutd != null && afterutd > initialutd) {
+          isSuccess = true;
+        }
+
+        if (!isSuccess) {
+          print("❌ Inject failed: utd did not increase after retries.");
+          return InjectResult(result: false, utd: afterutd, id: id);
+        }
 
 // ✅ Successful inject confirmed
-      return InjectResult(result: true, utd1: afterUtd1, id: id);
-    } catch (e) {
-      print("❌ Inject process error: $e");
-      return InjectResult(result: false, utd1: null, id: id);
+        return InjectResult(result: true, utd: afterutd, id: id);
+      } catch (e) {
+        print("❌ Inject process error: $e");
+        if (i == 2) {
+          return InjectResult(result: false, utd: null, id: id);
+        }
+      }
     }
+    return InjectResult(result: false, utd: null, id: id);
   }
 
 
   static Future<String> sendCommandAndListenProperly({
     required BluetoothDevice device,
     required String fullJson,
+    required BluetoothCharacteristic notifyChar,
+    required BluetoothCharacteristic writeChar,
   }) async {
-    final services = await device.discoverServices();
-    final service = services.firstWhere((s) => s.uuid == _serviceUuid);
-    final notifyChar = service.characteristics.firstWhere((c) =>
-    c.uuid == _notifyCharUuid);
-    final writeChar = service.characteristics.firstWhere((c) =>
-    c.uuid == _writeCharUuid);
-
     final completer = Completer<String>();
+    await Future.delayed(const Duration(milliseconds: 200));
 
-    // Enable notifications
-    await notifyChar.setNotifyValue(true);
+    // Enable notifications only if not already enabled
+    if (!notifyChar.isNotifying) {
+      await notifyChar.setNotifyValue(true);
+    }
 
     // Start listening BEFORE sending
     final sub = notifyChar.onValueReceived.listen((data) {
@@ -211,14 +224,9 @@ class BluetoothUtils {
 
     // Send the command
     final payload = utf8.encode(fullJson);
-    if (writeChar.properties.writeWithoutResponse) {
-      await writeChar.write(payload, withoutResponse: true);
-    } else {
-      await writeChar.write(payload, withoutResponse: false);
-    }
-    // await Future.delayed(const Duration(milliseconds: 50));
+    await writeChar.write(payload, withoutResponse: writeChar.properties.writeWithoutResponse);
+
     try {
-      // Wait for response or timeout
       final result = await completer.future.timeout(Duration(seconds: 2));
       await sub.cancel();
       return result;
@@ -229,15 +237,22 @@ class BluetoothUtils {
   }
 
 
-  /// Helper to sign JSON and wrap with signature
-  static String _wrapWithSignature(BluetoothDevice device,
-      String password,
-      List<Map<String, dynamic>> payloadList,) {
-    final jsonPayload = jsonEncode(payloadList.first); // Just the object
-    final mac = device.remoteId.str.toLowerCase();
-    final input = "$mac$password$jsonPayload";
-    final signature = sha256.convert(utf8.encode(input)).toString();
 
+  /// Helper to sign JSON and wrap with signature
+  static String _wrapWithSignature(
+      BluetoothDevice device,
+      String password,
+      List<Map<String, dynamic>> payloadList,
+      ) {
+    final jsonPayload = jsonEncode(payloadList.first);
+    final controllerMac = device.remoteId.str.toUpperCase().replaceAll(':', '-');
+
+    // Extract macaddress from payload (this is the pulse injector MAC)
+    final injectorMac = _extractMacAddressFromPayload(payloadList);
+
+    final input = "$controllerMac$injectorMac$jsonPayload";
+    final signature = sha256.convert(utf8.encode(input)).toString();
+    print('controllermac : ${controllerMac}, injectormac : ${injectorMac}');
     final fullJson = jsonEncode([
       ...payloadList,
       {"signature": signature}
@@ -247,5 +262,14 @@ class BluetoothUtils {
     return fullJson;
   }
 
+  static String _extractMacAddressFromPayload(List<Map<String, dynamic>> payloadList) {
+    try {
+      final mac = payloadList.first["data"]["macaddress"];
+      return (mac ?? "").toString().toUpperCase().replaceAll(':', '-');;
+    } catch (e) {
+      print("⚠️ Failed to extract injector MAC from payload: $e");
+      return "";
+    }
+  }
 
 }

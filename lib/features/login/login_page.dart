@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:dio/dio.dart';
+import 'package:cookie_jar/cookie_jar.dart';
+import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 
 class LoginPage extends StatefulWidget {
   @override
@@ -10,8 +16,16 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMixin {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _storage = FlutterSecureStorage();
   bool _obscurePassword = true;
   bool _isLoading = false;
+
+  final dio = Dio();
+  final cookieJar = CookieJar();
+
+
+// Save token manually to cookies after login
+
 
   final _formKey = GlobalKey<FormState>();
   late AnimationController _logoController;
@@ -19,11 +33,13 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
   @override
   void initState() {
     super.initState();
+    _loadEmail();
     _logoController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
     );
     _logoController.forward();
+    dio.interceptors.add(CookieManager(cookieJar));
   }
 
   @override
@@ -33,33 +49,107 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
     _logoController.dispose();
     super.dispose();
   }
-
-  void _login(BuildContext context) async {
-    if (!_formKey.currentState!.validate()) return;
-    FocusScope.of(context).unfocus(); // 👉 This dismisses the keyboard
-    setState(() => _isLoading = true);
-
-    try {
-      final email = _emailController.text.trim();
-      final password = _passwordController.text.trim();
-
-      // await FirebaseAuth.instance.signInWithEmailAndPassword(
-      //   email: email,
-      //   password: password,
-      // );
-
-      await Future.delayed(Duration(seconds: 2)); // Fake delay
-
-      if (!mounted) return;
-      context.go('/home');
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Login failed: ${e.toString()}')),
-      );
-    } finally {
-      setState(() => _isLoading = false);
+  void _loadEmail() async {
+    final savedEmail = await _storage.read(key: 'user_email');
+    if (savedEmail != null) {
+      setState(() {
+        _emailController.text = savedEmail;
+      });
     }
   }
+
+  Future<void> _login(BuildContext context) async {
+  if (!_formKey.currentState!.validate()) return;
+
+  FocusScope.of(context).unfocus();
+  setState(() => _isLoading = true);
+
+  try {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    // Attach cookie manager before request
+    dio.interceptors.clear();
+    dio.interceptors.add(CookieManager(cookieJar));
+
+    final response = await dio.post(
+    'https://192.168.0.203/api/account/login',
+    data: {
+    'Email': email,
+    'PasswordHash': password,
+    },
+    options: Options(
+    headers: { 'Content-Type': 'application/json' },
+    validateStatus: (_) => true, // prevent Dio from throwing on non-200
+    ),
+    );
+    final data = response.data;
+    if (response.statusCode == 200) {
+    final token = data['token'];
+
+    // Read the expiration date string directly from the 'expires' field
+    final expiryDateString = data['expires'] as String?;
+
+    if (expiryDateString != null) {
+      await _storage.write(key: 'token_expiry', value: expiryDateString);
+      print("🔒 Token expiry date received from server: $expiryDateString");
+    } else {
+      print("⚠️ 'expires' field was not found in the login response. No expiry date stored.");
+    }
+    print("exp : $expiryDateString}");
+    print('data: ${data}');
+    // Save secure values for later use
+    await _storage.write(key: 'auth_token', value: token);
+    await _storage.write(key: 'user_email', value: email);
+    await _storage.write(key: 'user_id', value: data['user']['Id'].toString());
+    await _storage.write(key: 'user_fullname', value: data['user']['FullName']);
+
+    // Clear previous outlet data before fetching new ones
+    await _storage.delete(key: 'outlets');
+    await _storage.delete(key: 'selected_outlet');
+
+    // Optional: log outlet-user
+    final outletRes = await dio.get(
+      'https://192.168.0.203/api/mobile/outlet-user',
+      options: Options(
+        headers: {
+          'Authorization': 'Bearer $token',
+        },
+      ),
+    );
+    if (response.statusCode == 200) {
+      //outlets & credits
+      await _storage.write(
+        key: 'outlets',
+        value: jsonEncode(outletRes.data), // Convert Map to JSON string
+      );
+    }
+    else {
+      print('Login failed: ${outletRes.statusCode}');
+
+      throw Exception('Login failed');
+    }
+
+    print('Outlet: ${outletRes.data}');
+
+    if (!mounted) return;
+    context.go('/home');
+    } else {
+    print('Login failed: ${response.statusCode}');
+    print('Response body: ${response.data}');
+    throw Exception('Login failed');
+    }
+    } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text('Login failed: ${e.toString()}')),
+
+    );
+    print('Login failed: ${e.toString()}');
+    } finally {
+    setState(() => _isLoading = false);
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {

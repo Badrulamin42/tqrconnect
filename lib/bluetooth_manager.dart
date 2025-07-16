@@ -8,6 +8,7 @@ class BluetoothManager {
   BluetoothManager._internal();
 
   BluetoothDevice? connectedDevice;
-
+  BluetoothCharacteristic? notifyChar;
+  BluetoothCharacteristic? writeChar;
   bool get isConnected => connectedDevice != null;
 }
