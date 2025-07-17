@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 class LoginPage extends StatefulWidget {
   @override
@@ -33,6 +34,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
   @override
   void initState() {
     super.initState();
+    _requestNotificationPermission(); // 🔔 Request permission
     _loadEmail();
     _logoController = AnimationController(
       vsync: this,
@@ -57,10 +59,22 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
       });
     }
   }
+  Future<void> _requestNotificationPermission() async {
+    // Android 13+ and iOS need explicit permission
+    final status = await Permission.notification.request();
+
+    if (status.isGranted) {
+      print("✅ Notification permission granted.");
+    } else if (status.isDenied) {
+      print("❌ Notification permission denied.");
+    } else if (status.isPermanentlyDenied) {
+      openAppSettings(); // Optionally guide user to settings
+    }
+  }
 
   Future<void> _login(BuildContext context) async {
   if (!_formKey.currentState!.validate()) return;
-
+  final fcmToken = await FirebaseMessaging.instance.getToken();
   FocusScope.of(context).unfocus();
   setState(() => _isLoading = true);
 
@@ -76,7 +90,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
     'https://192.168.0.203/api/account/login',
     data: {
     'Email': email,
-    'PasswordHash': password,
+    'PasswordHash': password, "NotificationKey": fcmToken,
     },
     options: Options(
     headers: { 'Content-Type': 'application/json' },

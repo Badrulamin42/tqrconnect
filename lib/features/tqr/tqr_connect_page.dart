@@ -213,6 +213,29 @@ class _TqrConnectPageState extends State<TqrConnectPage> {
     }
   }
 
+  Future<void> refreshCredit() async {
+    final outletJson = await _storage.read(key: 'selected_outlet');
+    if (outletJson == null) return;
+
+    final outlet = jsonDecode(outletJson);
+    final outletUserId = outlet['Id']; // 👈 assuming this is OutletUser Id
+
+    // Call your backend API to get the latest credit
+    final response = await dio.get(
+      'https://192.168.0.203/api/mobile/outlet-user/$outletUserId/credit',
+      options: Options(
+        headers: {
+          'Authorization': 'Bearer ${await _storage.read(key: 'auth_token')}',
+        },
+      ),
+    );
+
+    final newCredit = response.data['credit'];
+    print('response credit : $response');
+    setState(() {
+      _userCredit = newCredit;
+    });
+  }
 
 
   Future<void> _handleOutletSelection(BuildContext context) async {
@@ -567,7 +590,7 @@ class _TqrConnectPageState extends State<TqrConnectPage> {
       }
       return;
     }
-
+     await refreshCredit();
     final parentContext = context;
     double injectValue = 1;
 
